@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Product Management Blog Aggregator</title>
+    <!-- React + Babel (for instant-run JSX in browser) -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind for quick styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      // ---------- Feed list (fixed/validated where possible) ----------
+      const FEEDS = [
+        { name: "Intercom", url: "https://www.intercom.com/blog/feed/" },
+        { name: "Steve Blank", url: "https://steveblank.com/feed/" },
+        { name: "First Round Review", url: "https://review.firstround.com/feed" },
+        { name: "Product Love (Medium)", url: "https://medium.com/feed/product-love" },
+        { name: "Product Beautiful", url: "https://productbeautiful.com/feed/" },
+        { name: "SVPG", url: "https://svpg.com/feed/" },
+        { name: "Nir & Far", url: "https://www.nirandfar.com/feed/" },
+        { name: "Mironov", url: "https://www.mironov.com/feed/" },
+        { name: "Art of PM (Quora)", url: "https://theartofproductmanagement.quora.com/rss" },
+        { name: "Slack HQ", url: "https://slackhq.com/feed" },
+        { name: "Airbnb Nerds", url: "https://nerds.airbnb.com/feed/" },
+        { name: "The Product Club (Medium)", url: "https://medium.com/feed/@theproductclub" },
+        { name: "Good PM", url: "https://www.goodproductmanager.com/feed/" },
+        { name: "Mind the Product", url: "https://www.mindtheproduct.com/feed/" },
+        { name: "Earnest PM (Medium)", url: "https://medium.com/feed/earnest-product-management" },
+      ];
+
+      // Public CORS proxy so we can fetch feeds directly in the browser
+      const CORS_PROXY = "https://api.allorigins.win/raw?url=";
+
+      // ---------- Utilities ----------
+      function parseXml(text) {
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, "application/xml");
+        if (xml.querySelector("parsererror")) {
+          throw new Error("Invalid XML");
+        }
+        return xml;
+      }
+
+      function toTs(dateStr) {
+        if (!dateStr) return 0;
+        const t = Date.parse(dateStr);
+        return Number.isNaN(t) ? 0 : t;
+      }
+
+      function formatDate(ts) {
+        if (!ts) return "";
+        const d = new Date(ts);
+        return (
+          d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" }) +
+          " " +
+          d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+        );
+      }
+
+      // Parse both RSS 2.0 and Atom 1.0 into a unified array
+      function parseFeed(xmlText, feedUrl, feedName) {
+        const xml = parseXml(xmlText);
+        const isRSS2 = !!xml.querySelector("channel > item");
+        const isAtom = !!xml.querySelector("feed > entry");
+        const posts = [];
+
+        if (isRSS2) {
+          const items = Array.from(xml.querySelectorAll("channel > item"));
+          items.forEach((it) => {
+            const title = it.querySelector("title")?.textContent || "(no title)";
+            const link = it.querySelector("link")?.textContent || feedUrl;
+            const dateStr =
+              it.querySelector("pubDate")?.textContent ||
+              it.querySelector("dc\\:date")?.textContent ||
+              "";
+            posts.push({ title, link, ts: toTs(dateStr), source: feedName });
+          });
+        } else if (isAtom) {
+          const entries = Array.from(xml.querySelectorAll("feed > entry"));
+          entries.forEach((en) => {
+            const title = en.querySelector("title")?.textContent || "(no title)";
+            const linkEl = en.querySelector('link[rel="alternate"]') || en.querySelector("link");
+            const href = linkEl?.getAttribute("href") || feedUrl;
+            const dateStr =
+              en.querySelector("updated")?.textContent ||
+              en.querySelector("published")?.textContent ||
+              "";
+            posts.push({ title, link: href, ts: toTs(dateStr), source: feedName });
+          });
+        } else {
+          // Fallback for quirky feeds (RDF etc.)
+          const items = Array.from(xml.querySelectorAll("item"));
+          items.forEach((it) => {
+            const title = it.querySelector("title")?.textContent || "(no title)";
+            const link = it.querySelector("link")?.textContent || feedUrl;
+            const dateStr = it.querySelector("pubDate")?.textContent || "";
+            posts.push({ title, link, ts: toTs(dateStr), source: feedName });
+          });
+        }
+
+        posts.sort((a, b) => b.ts - a.ts);
+        return posts;
+      }
+
+      function BlogAggregator() {
+        const [groups, setGroups] = React.useState({});
+        const [collapsed, setCollapsed] = React.useState(new Set());
+        const [errors, setErrors] = React.useState({});
+        const [loading, setLoading] = React.useState(false);
+        const [lastUpdated, setLastUpdated] = React.useState(null);
+
+        async function refresh() {
+          setLoading(true);
+          setErrors({});
+          const newGroups = {};
+          const newErrors = {};
+
+          await Promise.all(
+            FEEDS.map(async (feed) => {
+              try {
+                const res = await fetch(CORS_PROXY + encodeURIComponent(feed.url));
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const xmlText = await res.text();
+                const posts = parseFeed(xmlText, feed.url, feed.name).slice(0, 50);
+                newGroups[feed.name] = posts;
+              } catch (e) {
+                newErrors[feed.name] = e.message || "Failed to fetch";
+                newGroups[feed.name] = [];
+              }
+            })
+          );
+
+          setGroups(newGroups);
+          setErrors(newErrors);
+          setLoading(false);
+          setLastUpdated(new Date().toISOString());
+        }
+
+        React.useEffect(() => { refresh(); }, []);
+
+        const allSources = FEEDS.map((f) => f.name);
+
+        function toggle(name) {
+          setCollapsed((prev) => {
+            const n = new Set(prev);
+            if (n.has(name)) n.delete(name);
+            else n.add(name);
+            return n;
+          });
+        }
+
+        function setAll(expand) {
+          setCollapsed(() => {
+            if (expand) return new Set();
+            return new Set(allSources);
+          });
+        }
+
+        return (
+          <div className="min-h-screen">
+            {/* Header */}
+            <header className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b">
+              <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-black text-white grid place-items-center text-xl font-bold">∞</div>
+                  <div>
+                    <h1 className="text-xl font-semibold leading-tight">Product Management Blog Aggregator</h1>
+                    <p className="text-xs text-gray-500">Grouped by source • newest first within each group</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 md:items-center">
+                  <button onClick={() => setAll(true)} className="px-3 py-2 rounded-xl border shadow-sm">Expand All</button>
+                  <button onClick={() => setAll(false)} className="px-3 py-2 rounded-xl border shadow-sm">Collapse All</button>
+                  <button onClick={refresh} disabled={loading} className="px-4 py-2 rounded-xl bg-black text-white shadow disabled:opacity-50">
+                    {loading ? "Refreshing…" : "Refresh"}
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            {/* Errors */}
+            {Object.keys(errors).length > 0 && (
+              <div className="max-w-6xl mx-auto px-4 pt-4">
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                  <strong className="font-medium">Some sources failed to load:</strong>
+                  <ul className="list-disc ml-6 mt-1">
+                    {Object.entries(errors).map(([name, msg]) => (
+                      <li key={name}><span className="font-medium">{name}</span>: <span className="opacity-80">{msg}</span></li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs">Tip: Some sites (e.g., Medium/Quora) may block public proxies. For reliability, use your own tiny server-side proxy.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Content */}
+            <main className="max-w-6xl mx-auto px-4 py-6">
+              <div className="grid gap-4">
+                {allSources.map((name) => {
+                  const posts = groups[name] || [];
+                  const isCollapsed = collapsed.has(name);
+                  return (
+                    <section key={name} className="rounded-2xl border bg-white shadow-sm">
+                      <button
+                        onClick={() => toggle(name)}
+                        className="w-full flex items-center justify-between px-4 py-3 text-left"
+                        aria-expanded={!isCollapsed}
+                        aria-controls={`section-${name}`}
+                      >
+                        <span className="font-semibold">{name}</span>
+                        <span className="text-xs text-gray-500">{isCollapsed ? "Show" : "Hide"} • {posts.length} posts</span>
+                      </button>
+                      <div id={`section-${name}`} className={isCollapsed ? "hidden" : "block"}>
+                        {posts.length === 0 ? (
+                          <div className="px-4 pb-4 text-sm text-gray-500">No posts found.</div>
+                        ) : (
+                          <ul className="px-4 pb-4 divide-y">
+                            {posts.map((p, idx) => (
+                              <li key={idx} className="py-3">
+                                <a href={p.link} target="_blank" rel="noreferrer" className="font-medium hover:underline">
+                                  {p.title}
+                                </a>
+                                <div className="text-xs text-gray-500 mt-1">{formatDate(p.ts)}</div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+
+              {allSources.length === 0 && (
+                <div className="text-center text-gray-500 py-16">
+                  <p className="mb-3">No sources configured.</p>
+                  <p className="text-sm">Add feed URLs in the FEEDS array at the top of the file.</p>
+                </div>
+              )}
+            </main>
+
+            {/* Footer */}
+            <footer className="max-w-6xl mx-auto px-4 pb-10 pt-2 text-xs text-gray-500">
+              <p>
+                Client-side fetching via <code>api.allorigins.win</code>. For production, consider replacing with your own proxy (serverless function) if any feeds block public proxies.
+              </p>
+              {lastUpdated && (
+                <p className="mt-1">Last updated: <span className="font-mono">{new Date(lastUpdated).toLocaleString()}</span></p>
+              )}
+            </footer>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<BlogAggregator />);
+    </script>
+  </body>
+</html>
