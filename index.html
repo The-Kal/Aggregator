@@ -3,185 +3,251 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>RSS Dashboard</title>
+  <title>Blog Aggregator</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
-      background-color: var(--bg);
+      background: var(--bg);
       color: var(--text);
       transition: background 0.3s, color 0.3s;
     }
     :root {
       --bg: #ffffff;
       --text: #000000;
-      --card-bg: #f4f4f4;
-      --link: #0645ad;
+      --card-bg: #f2f2f2;
+      --button-bg: #007bff;
+      --button-text: #ffffff;
     }
-    body.dark {
-      --bg: #121212;
-      --text: #e0e0e0;
-      --card-bg: #1e1e1e;
-      --link: #82aaff;
+    .dark {
+      --bg: #181818;
+      --text: #f0f0f0;
+      --card-bg: #242424;
+      --button-bg: #0d6efd;
+      --button-text: #ffffff;
     }
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 1rem;
-      background-color: var(--card-bg);
+      background: var(--card-bg);
       position: sticky;
       top: 0;
       z-index: 100;
     }
     header h1 {
       margin: 0;
-      font-size: 1.2rem;
+      font-size: 1.5rem;
     }
-    header .controls button {
-      margin-left: 0.5rem;
+    header button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: var(--button-bg);
+      color: var(--button-text);
+      font-size: 0.9rem;
     }
-    .grid {
+    .controls {
+      display: flex;
+      gap: 0.5rem;
+    }
+    main {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      grid-template-columns: 1fr;
       gap: 1rem;
       padding: 1rem;
     }
+    @media(min-width: 600px) {
+      main { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media(min-width: 900px) {
+      main { grid-template-columns: repeat(3, 1fr); }
+    }
     .card {
-      background-color: var(--card-bg);
-      border-radius: 8px;
-      padding: 0.5rem 1rem;
+      background: var(--card-bg);
+      padding: 1rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
     }
     .card h2 {
-      font-size: 1rem;
       margin: 0;
-      cursor: pointer;
+      font-size: 1.2rem;
+      margin-bottom: 0.3rem;
     }
-    .card small {
-      display: block;
-      margin-bottom: 0.5rem;
-      color: gray;
-    }
-    ul {
-      padding-left: 1rem;
-    }
-    li {
+    .timestamp {
+      font-size: 0.8rem;
+      opacity: 0.7;
       margin-bottom: 0.5rem;
     }
-    a {
-      color: var(--link);
+    .entries {
+      display: none;
+      margin-top: 0.5rem;
+    }
+    .entry {
+      margin-bottom: 0.7rem;
+    }
+    .entry a {
+      color: var(--button-bg);
       text-decoration: none;
     }
-    a:hover {
-      text-decoration: underline;
-    }
-    button {
-      padding: 0.3rem 0.6rem;
+    .card button {
+      margin-top: 0.3rem;
+      padding: 0.5rem;
       border: none;
-      border-radius: 4px;
+      border-radius: 8px;
       cursor: pointer;
+      background: var(--button-bg);
+      color: var(--button-text);
+      font-size: 0.9rem;
+      width: fit-content;
+    }
+    .card button:active {
+      transform: scale(0.97);
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>RSS Dashboard</h1>
+    <h1>Blog Aggregator</h1>
     <div class="controls">
-      <button onclick="refreshFeeds()">Refresh</button>
-      <button onclick="expandAll()">Expand All</button>
-      <button onclick="collapseAll()">Collapse All</button>
-      <button onclick="toggleTheme()">Toggle Theme</button>
+      <button id="expandAll">Expand All</button>
+      <button id="collapseAll">Collapse All</button>
+      <button id="themeToggle">Toggle Theme</button>
     </div>
   </header>
-  <div class="grid" id="feedGrid"></div>
+  <main id="feedContainer"></main>
 
   <script>
     const feeds = [
-      {title: "Hacker News", url: "https://hnrss.org/frontpage"},
-      {title: "BBC World", url: "http://feeds.bbci.co.uk/news/world/rss.xml"},
-      {title: "TechCrunch", url: "http://feeds.feedburner.com/TechCrunch/"},
+      "https://blog.intercom.io/feed/",
+      "https://steveblank.com/feed/",
+      "https://firstround.com/review/feed/",
+      "https://medium.com/feed/product-love",
+      "http://productbeautiful.com/feed/",
+      "https://svpg.com/feed/",
+      "https://www.nirandfar.com/feed/",
+      "https://mironov.com/feed/",
+      "https://theartofproductmanagement.quora.com/rss",
+      "https://slackhq.com/feed",
+      "https://nerds.airbnb.com/feed/",
+      "https://medium.com/feed/@theproductclub",
+      "http://www.goodproductmanager.com/feed/",
+      "https://www.mindtheproduct.com/feed/",
+      "https://medium.com/feed/earnest-product-management"
     ];
 
-    async function fetchFeed(feed) {
-      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(feed.url)}`;
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        const parser = new DOMParser();
-        const xml = parser.parseFromString(data.contents, "text/xml");
-        const items = xml.querySelectorAll("item");
-        let latestDate = null;
-        const entries = [];
-        items.forEach(item => {
-          const title = item.querySelector("title")?.textContent || "No title";
-          const link = item.querySelector("link")?.textContent || "#";
-          const pubDate = new Date(item.querySelector("pubDate")?.textContent);
-          if (!isNaN(pubDate)) {
-            if (!latestDate || pubDate > latestDate) latestDate = pubDate;
-          }
-          entries.push({title, link, pubDate});
-        });
-        return {feed, entries, latestDate};
-      } catch (e) {
-        console.error("Failed to fetch", feed.url, e);
-        return {feed, entries: [], latestDate: null};
-      }
-    }
+    const container = document.getElementById("feedContainer");
 
-    function formatDate(d) {
-      if (!d) return "";
-      return d.toLocaleString();
+    // Theme
+    const themeToggle = document.getElementById("themeToggle");
+    if(localStorage.getItem("theme") === "dark"){
+      document.body.classList.add("dark");
     }
-
-    async function refreshFeeds() {
-      const grid = document.getElementById("feedGrid");
-      grid.innerHTML = "";
-      for (const feed of feeds) {
-        const card = document.createElement("div");
-        card.className = "card";
-        card.innerHTML = `<h2>${feed.title}</h2><small>Loading...</small><ul></ul>`;
-        grid.appendChild(card);
-        const result = await fetchFeed(feed);
-        const h2 = card.querySelector("h2");
-        const small = card.querySelector("small");
-        const ul = card.querySelector("ul");
-        if (result.latestDate) {
-          small.textContent = "Latest: " + formatDate(result.latestDate);
-        } else {
-          small.textContent = "Failed to load";
-        }
-        ul.innerHTML = "";
-        result.entries.forEach(entry => {
-          const li = document.createElement("li");
-          li.innerHTML = `<a href="${entry.link}" target="_blank">${entry.title}</a><br><small>${formatDate(entry.pubDate)}</small>`;
-          ul.appendChild(li);
-        });
-        h2.addEventListener("click", () => {
-          ul.style.display = ul.style.display === "none" ? "block" : "none";
-        });
-      }
-    }
-
-    function expandAll() {
-      document.querySelectorAll(".card ul").forEach(ul => ul.style.display = "block");
-    }
-
-    function collapseAll() {
-      document.querySelectorAll(".card ul").forEach(ul => ul.style.display = "none");
-    }
-
-    function toggleTheme() {
+    themeToggle.addEventListener("click", () => {
       document.body.classList.toggle("dark");
-      localStorage.setItem("theme", document.body.classList.contains("dark") ? "dark" : "light");
+      localStorage.setItem("theme", document.body.classList.contains("dark") ? "dark":"light");
+    });
+
+    async function fetchFeed(url) {
+      try {
+        const api = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+        const res = await fetch(api);
+        return res.json();
+      } catch {
+        return null;
+      }
     }
 
-    (function init() {
-      if (localStorage.getItem("theme") === "dark") {
-        document.body.classList.add("dark");
+    function renderFeed(feed, data) {
+      const card = document.createElement("div");
+      card.className = "card";
+      const title = document.createElement("h2");
+      title.textContent = feed.title || data.feed.title || "Unknown Source";
+      const ts = document.createElement("div");
+      ts.className = "timestamp";
+      ts.textContent = data.items[0] ? `Last updated: ${new Date(data.items[0].pubDate).toLocaleString()}` : "";
+      const toggleBtn = document.createElement("button");
+      toggleBtn.textContent = "Expand";
+      const entries = document.createElement("div");
+      entries.className = "entries";
+
+      let start = 0;
+      function loadEntries(count=10){
+        const slice = data.items.slice(start, start+count);
+        slice.forEach(item=>{
+          const div = document.createElement("div");
+          div.className = "entry";
+          div.innerHTML = `<a href="${item.link}" target="_blank">${item.title}</a><br>
+            <span class="timestamp">${new Date(item.pubDate).toLocaleString()}</span>`;
+          entries.appendChild(div);
+        });
+        start += count;
+        if(start >= data.items.length){
+          loadMoreBtn.style.display = "none";
+        }
       }
-      refreshFeeds();
+
+      const loadMoreBtn = document.createElement("button");
+      loadMoreBtn.textContent = "Load 10 more";
+      loadMoreBtn.addEventListener("click", ()=>loadEntries(10));
+
+      toggleBtn.addEventListener("click", ()=>{
+        if(entries.style.display === "none"){
+          entries.style.display = "block";
+          toggleBtn.textContent = "Collapse";
+        } else {
+          entries.style.display = "none";
+          toggleBtn.textContent = "Expand";
+        }
+      });
+
+      card.appendChild(title);
+      card.appendChild(ts);
+      card.appendChild(toggleBtn);
+      card.appendChild(entries);
+      card.appendChild(loadMoreBtn);
+
+      container.appendChild(card);
+
+      loadEntries(10);
+      entries.style.display="none";
+    }
+
+    (async function(){
+      for(const url of feeds){
+        const data = await fetchFeed(url);
+        if(data && data.items){
+          renderFeed({title:data.feed.title}, data);
+        } else {
+          const card = document.createElement("div");
+          card.className="card";
+          card.innerHTML = `<h2>${url}</h2><p>Failed to load</p>`;
+          container.appendChild(card);
+        }
+      }
     })();
+
+    document.getElementById("expandAll").addEventListener("click", ()=>{
+      document.querySelectorAll(".card .entries").forEach(e=>{
+        e.style.display="block";
+      });
+      document.querySelectorAll(".card button:first-of-type").forEach(b=>{
+        b.textContent="Collapse";
+      });
+    });
+    document.getElementById("collapseAll").addEventListener("click", ()=>{
+      document.querySelectorAll(".card .entries").forEach(e=>{
+        e.style.display="none";
+      });
+      document.querySelectorAll(".card button:first-of-type").forEach(b=>{
+        b.textContent="Expand";
+      });
+    });
   </script>
 </body>
 </html>
