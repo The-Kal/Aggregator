@@ -2,69 +2,81 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Blog Aggregator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RSS Dashboard</title>
   <style>
     body {
       font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
+      background-color: var(--bg);
+      color: var(--text);
       transition: background 0.3s, color 0.3s;
+    }
+    :root {
+      --bg: #ffffff;
+      --text: #000000;
+      --card-bg: #f4f4f4;
+      --link: #0645ad;
+    }
+    body.dark {
+      --bg: #121212;
+      --text: #e0e0e0;
+      --card-bg: #1e1e1e;
+      --link: #82aaff;
     }
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       padding: 1rem;
-      background: #444;
-      color: white;
+      background-color: var(--card-bg);
+      position: sticky;
+      top: 0;
+      z-index: 100;
     }
-    .buttons {
-      display: flex;
-      gap: 10px;
+    header h1 {
+      margin: 0;
+      font-size: 1.2rem;
     }
-    .source-grid {
+    header .controls button {
+      margin-left: 0.5rem;
+    }
+    .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 1rem;
       padding: 1rem;
     }
-    .source {
-      border: 1px solid #ccc;
+    .card {
+      background-color: var(--card-bg);
       border-radius: 8px;
-      padding: 1rem;
-      background: #f9f9f9;
-      transition: background 0.3s, color 0.3s;
+      padding: 0.5rem 1rem;
     }
-    .source h2 {
-      font-size: 1.2rem;
+    .card h2 {
+      font-size: 1rem;
       margin: 0;
       cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
     }
-    .entries {
-      margin-top: 0.5rem;
-    }
-    .entry {
-      border-top: 1px solid #ddd;
-      padding: 0.5rem 0;
-    }
-    .entry time {
-      font-size: 0.8rem;
+    .card small {
+      display: block;
+      margin-bottom: 0.5rem;
       color: gray;
     }
-    /* Dark mode */
-    body.dark {
-      background: #222;
-      color: #eee;
+    ul {
+      padding-left: 1rem;
     }
-    body.dark .source {
-      background: #333;
-      border-color: #555;
+    li {
+      margin-bottom: 0.5rem;
     }
-    header button {
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    button {
       padding: 0.3rem 0.6rem;
       border: none;
       border-radius: 4px;
@@ -74,76 +86,102 @@
 </head>
 <body>
   <header>
-    <h1>Blog Aggregator</h1>
-    <div class="buttons">
-      <button onclick="toggleTheme()">Toggle Theme</button>
+    <h1>RSS Dashboard</h1>
+    <div class="controls">
+      <button onclick="refreshFeeds()">Refresh</button>
       <button onclick="expandAll()">Expand All</button>
       <button onclick="collapseAll()">Collapse All</button>
+      <button onclick="toggleTheme()">Toggle Theme</button>
     </div>
   </header>
-  <main class="source-grid" id="sources"></main>
+  <div class="grid" id="feedGrid"></div>
 
   <script>
-    const sources = [
-      { title: "Example Feed 1", url: "https://hnrss.org/frontpage" },
-      { title: "Example Feed 2", url: "https://xkcd.com/rss.xml" }
+    const feeds = [
+      {title: "Hacker News", url: "https://hnrss.org/frontpage"},
+      {title: "BBC World", url: "http://feeds.bbci.co.uk/news/world/rss.xml"},
+      {title: "TechCrunch", url: "http://feeds.feedburner.com/TechCrunch/"},
     ];
 
-    const sourcesContainer = document.getElementById("sources");
-
-    // Load feeds asynchronously
-    async function fetchFeed(source) {
+    async function fetchFeed(feed) {
+      const url = `https://api.allorigins.win/get?url=${encodeURIComponent(feed.url)}`;
       try {
-        const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(source.url)}`);
-        const data = await response.json();
-
-        const sourceDiv = document.createElement("div");
-        sourceDiv.className = "source";
-
-        const latestDate = data.items.length > 0 ? new Date(data.items[0].pubDate).toLocaleString() : "No updates";
-
-        const header = document.createElement("h2");
-        header.innerHTML = `${source.title} <small>(Last update: ${latestDate})</small>`;
-        header.onclick = () => {
-          entriesDiv.style.display = entriesDiv.style.display === "none" ? "block" : "none";
-        };
-
-        const entriesDiv = document.createElement("div");
-        entriesDiv.className = "entries";
-
-        data.items.forEach(item => {
-          const entryDiv = document.createElement("div");
-          entryDiv.className = "entry";
-          entryDiv.innerHTML = `
-            <a href="${item.link}" target="_blank">${item.title}</a><br/>
-            <time>${new Date(item.pubDate).toLocaleString()}</time>
-          `;
-          entriesDiv.appendChild(entryDiv);
+        const res = await fetch(url);
+        const data = await res.json();
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(data.contents, "text/xml");
+        const items = xml.querySelectorAll("item");
+        let latestDate = null;
+        const entries = [];
+        items.forEach(item => {
+          const title = item.querySelector("title")?.textContent || "No title";
+          const link = item.querySelector("link")?.textContent || "#";
+          const pubDate = new Date(item.querySelector("pubDate")?.textContent);
+          if (!isNaN(pubDate)) {
+            if (!latestDate || pubDate > latestDate) latestDate = pubDate;
+          }
+          entries.push({title, link, pubDate});
         });
-
-        sourceDiv.appendChild(header);
-        sourceDiv.appendChild(entriesDiv);
-        sourcesContainer.appendChild(sourceDiv);
-
-      } catch (err) {
-        console.error("Error loading feed:", source.title, err);
+        return {feed, entries, latestDate};
+      } catch (e) {
+        console.error("Failed to fetch", feed.url, e);
+        return {feed, entries: [], latestDate: null};
       }
+    }
+
+    function formatDate(d) {
+      if (!d) return "";
+      return d.toLocaleString();
+    }
+
+    async function refreshFeeds() {
+      const grid = document.getElementById("feedGrid");
+      grid.innerHTML = "";
+      for (const feed of feeds) {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `<h2>${feed.title}</h2><small>Loading...</small><ul></ul>`;
+        grid.appendChild(card);
+        const result = await fetchFeed(feed);
+        const h2 = card.querySelector("h2");
+        const small = card.querySelector("small");
+        const ul = card.querySelector("ul");
+        if (result.latestDate) {
+          small.textContent = "Latest: " + formatDate(result.latestDate);
+        } else {
+          small.textContent = "Failed to load";
+        }
+        ul.innerHTML = "";
+        result.entries.forEach(entry => {
+          const li = document.createElement("li");
+          li.innerHTML = `<a href="${entry.link}" target="_blank">${entry.title}</a><br><small>${formatDate(entry.pubDate)}</small>`;
+          ul.appendChild(li);
+        });
+        h2.addEventListener("click", () => {
+          ul.style.display = ul.style.display === "none" ? "block" : "none";
+        });
+      }
+    }
+
+    function expandAll() {
+      document.querySelectorAll(".card ul").forEach(ul => ul.style.display = "block");
+    }
+
+    function collapseAll() {
+      document.querySelectorAll(".card ul").forEach(ul => ul.style.display = "none");
     }
 
     function toggleTheme() {
       document.body.classList.toggle("dark");
+      localStorage.setItem("theme", document.body.classList.contains("dark") ? "dark" : "light");
     }
 
-    function expandAll() {
-      document.querySelectorAll(".entries").forEach(div => div.style.display = "block");
-    }
-
-    function collapseAll() {
-      document.querySelectorAll(".entries").forEach(div => div.style.display = "none");
-    }
-
-    // Load all sources
-    sources.forEach(fetchFeed);
+    (function init() {
+      if (localStorage.getItem("theme") === "dark") {
+        document.body.classList.add("dark");
+      }
+      refreshFeeds();
+    })();
   </script>
 </body>
 </html>
