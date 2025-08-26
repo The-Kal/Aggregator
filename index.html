@@ -163,60 +163,61 @@
       }
     }
 
-    function renderFeed(feed, data) {
-      const card = document.createElement("div");
-      card.className = "card";
-      const title = document.createElement("h2");
-      title.textContent = feed.title || data.feed.title || "Unknown Source";
-      const ts = document.createElement("div");
-      ts.className = "timestamp";
-      ts.textContent = data.items[0] ? `Last updated: ${new Date(data.items[0].pubDate).toLocaleString()}` : "";
-      const toggleBtn = document.createElement("button");
-      toggleBtn.textContent = "Expand";
-      const entries = document.createElement("div");
-      entries.className = "entries";
+function renderFeed(feed, data) {
+  const card = document.createElement("div");
+  card.className = "card";
+  const title = document.createElement("h2");
+  title.textContent = feed.title || data.feed.title || "Unknown Source";
+  const ts = document.createElement("div");
+  ts.className = "timestamp";
+  ts.textContent = data.items[0] ? `Last updated: ${new Date(data.items[0].pubDate).toLocaleString()}` : "";
+  const toggleBtn = document.createElement("button");
+  toggleBtn.textContent = "Expand";
+  const entries = document.createElement("div");
+  entries.className = "entries";
 
-      let start = 0;
-      function loadEntries(count=10){
-        const slice = data.items.slice(start, start+count);
-        slice.forEach(item=>{
-          const div = document.createElement("div");
-          div.className = "entry";
-          div.innerHTML = `<a href="${item.link}" target="_blank">${item.title}</a><br>
-            <span class="timestamp">${new Date(item.pubDate).toLocaleString()}</span>`;
-          entries.appendChild(div);
-        });
-        start += count;
-        if(start >= data.items.length){
-          loadMoreBtn.style.display = "none";
-        }
-      }
-
-      const loadMoreBtn = document.createElement("button");
-      loadMoreBtn.textContent = "Load 10 more";
-      loadMoreBtn.addEventListener("click", ()=>loadEntries(10));
-
-      toggleBtn.addEventListener("click", ()=>{
-        if(entries.style.display === "none"){
-          entries.style.display = "block";
-          toggleBtn.textContent = "Collapse";
-        } else {
-          entries.style.display = "none";
-          toggleBtn.textContent = "Expand";
-        }
-      });
-
-      card.appendChild(title);
-      card.appendChild(ts);
-      card.appendChild(toggleBtn);
-      card.appendChild(entries);
-      card.appendChild(loadMoreBtn);
-
-      container.appendChild(card);
-
-      loadEntries(10);
-      entries.style.display="none";
+  let start = 0;
+  function loadEntries(count=10){
+    const slice = data.items.slice(start, start+count);
+    slice.forEach(item=>{
+      const div = document.createElement("div");
+      div.className = "entry";
+      div.innerHTML = `<a href="${item.link}" target="_blank">${item.title}</a><br>
+        <span class="timestamp">${new Date(item.pubDate).toLocaleString()}</span>`;
+      entries.appendChild(div);
+    });
+    start += count;
+    if(start >= data.items.length){
+      loadMoreBtn.style.display = "none";
     }
+  }
+
+  const loadMoreBtn = document.createElement("button");
+  loadMoreBtn.textContent = "Load 10 more";
+  loadMoreBtn.addEventListener("click", ()=>loadEntries(10));
+
+  toggleBtn.addEventListener("click", ()=>{
+    if(entries.style.display === "none"){
+      entries.style.display = "block";
+      toggleBtn.textContent = "Collapse";
+    } else {
+      entries.style.display = "none";
+      toggleBtn.textContent = "Expand";
+    }
+  });
+
+  card.appendChild(title);
+  card.appendChild(ts);
+  card.appendChild(toggleBtn);
+  card.appendChild(entries);
+  card.appendChild(loadMoreBtn);
+
+  container.appendChild(card);
+
+  loadEntries(10);
+  entries.style.display = "block";   // 👈 expanded as default
+  toggleBtn.textContent = "Collapse"; // 👈 reflect correct state
+}
 
     (async function(){
       for(const url of feeds){
